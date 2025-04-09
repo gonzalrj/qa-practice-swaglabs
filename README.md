@@ -28,3 +28,9 @@ Cloning repository to local machine.
 1. Get the GitHub repo URL.
 2. Via Terminal, navigate to the folder you want to save a copy of your project locally.
 3. Clone the repo by running git clone https://github.com/yourusername/your-repo-name.git (your GitHub repo URL).
+4. Via Terminal, activate your venv by running source venv-path-name/bin/activate
+5. Verify that your desired dependencies are captured by running pip list
+6. Once confirmed, create a requirements.txt file from it by executing pip freeze > requirements.txt
+7. The project can now be opened in your preferred IDE, in my case it is PyCharm. Make sure to use the created virtual environment for this project.
+
+
