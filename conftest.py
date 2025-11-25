@@ -4,17 +4,14 @@ import pytest
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
-from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 
 
 def pytest_addoption(parser):
     parser.addoption("--base-url", action="store", help="Base URL for tests")
-    parser.addoption("--browser", action="store", default="chrome",
-                     help="Browser: chrome, firefox, or edge")
-    parser.addoption("--headless", action="store_true", default=False,
-                     help="Run browser in headless mode")
+    parser.addoption("--browser", action="store", default="chrome", help="Browser: chrome, firefox, or edge")
+    parser.addoption("--headless", action="store_true", default=False, help="Run browser in headless mode")
 
 
 @pytest.fixture
@@ -89,17 +86,7 @@ def driver(request):
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
 
-        # Read explicit binaries from env (set in Dockerfile) or use sensible defaults
-        chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
-        chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
-
-        # Point Chrome options at the browser binary
-        options.binary_location = chrome_bin
-
-        # Use Service with executable_path to bypass Selenium Manager
-        service = ChromeService(executable_path=chromedriver_path)
-
-        driver = webdriver.Chrome(service=service, options=options)
+        driver = webdriver.Chrome(options=options)
 
     elif browser == "firefox":
         options = FirefoxOptions()
@@ -110,7 +97,6 @@ def driver(request):
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
 
-        # If you installed geckodriver somewhere, you can provide a Service similarly (optional)
         driver = webdriver.Firefox(options=options)
 
     elif browser == "edge":
@@ -121,7 +107,6 @@ def driver(request):
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
 
-        # If you installed msedgedriver, provide a Service similarly (optional)
         driver = webdriver.Edge(options=options)
 
     else:
