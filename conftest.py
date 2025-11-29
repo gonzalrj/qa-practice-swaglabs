@@ -29,9 +29,10 @@ def driver(request):
     # Common Chrome prefs (disable password manager / credential service)
     chrome_prefs = {
         "profile.password_manager_leak_detection": False,
-        "credentials_enable_service": False,
+        "credentials_enable_service": False
     }
 
+    # region: Remote Driver
     # -------------
     # REMOTE DRIVER
     # -------------
@@ -71,6 +72,7 @@ def driver(request):
         yield driver
         driver.quit()
         return
+    # endregion
 
     # -------------
     # LOCAL DRIVER (explicit Service -> bypass Selenium Manager)

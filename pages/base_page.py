@@ -66,7 +66,7 @@ class BasePage:
             logger.error(msg)
             raise AssertionError(msg) from exc
 
-    def _wait_until_redirected_to(self, url: str, wait_time=5):
+    def _wait_until_redirected_to(self, url: str, wait_time: Optional[int] = None):
         timeout = wait_time or self.default_wait
         WebDriverWait(self.driver, timeout).until(ec.url_to_be(url))
 
@@ -105,3 +105,7 @@ class BasePage:
     def _hit_enter_key(self):
         a = ActionChains(self.driver)
         a.send_keys(Keys.ENTER).perform()
+
+    def _get_current_url(self) -> str:
+        return self.driver.current_url
+

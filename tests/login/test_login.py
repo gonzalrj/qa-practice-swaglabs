@@ -5,7 +5,7 @@ from pages.login_page import LoginPage
 from pages.menu import Menu
 
 
-@allure.parent_suite("Cambridge Drupal Website")
+@allure.parent_suite("Swag Labs Website")
 @allure.suite("Authentication")
 @allure.sub_suite("Login")
 class TestLogin:
@@ -28,7 +28,7 @@ class TestLogin:
     @allure.title("Verify that user was logged in using valid credentials.")
     def test_success_login(self, driver, base_url):
         with allure.step("Login user using valid credentials."):
-            self.loginpage._login_user(*self.success_login)
+            self.loginpage._execute_login(*self.success_login)
 
         with allure.step("Verify that user was successfully logged in."):
             assert not self.loginpage._is_error_header_displayed(time=2), "User was not logged in."
@@ -40,7 +40,7 @@ class TestLogin:
     @allure.title("Verify that user was not logged in using locked out credentials.")
     def test_lockedout_login(self, driver, base_url):
         with allure.step("Login user using locked out credentials."):
-            self.loginpage._login_user(*self.locked_out_user)
+            self.loginpage._execute_login(*self.locked_out_user)
 
         with allure.step("Verify that the lock out error is displayed."):
             assert self.loginpage._is_lockout_error_displayed(time=2), "User not prompted with lock out error."

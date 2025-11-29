@@ -1,0 +1,127 @@
+name: Manual Selenium Test Run (Python 3.12 + Chrome)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Optional: override BASE_URL (leave empty to use entrypoint.sh default)'
+        required: false
+        default: ''
+      marker:
+        description: 'Optional: pytest marker (leave empty to use entrypoint.sh default)'
+        required: false
+        default: ''
+      xdist:
+        description: 'Optional: pytest-xdist -n value (e.g. auto). Leave empty to use entrypoint.sh default'
+        required: false
+        default: ''
+      headless:
+        description: 'Optional: override HEADLESS (true|false). Leave empty to use entrypoint.sh default'
+        required: false
+        default: ''
+      extra_args:
+        description: 'Optional: extra pytest args (single string). Leave empty to use entrypoint.sh default'
+        required: false
+        default: ''
+      reruns:
+        description: 'Optional: number of reruns (--reruns). Leave empty to use entrypoint.sh default'
+        required: false
+        default: ''
+      reruns_delay:
+        description: 'Optional: rerun delay (--reruns-delay). Leave empty to use entrypoint.sh default'
+        required: false
+        default: ''
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository (main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Google Chrome (stable)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y wget unzip
+          wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          # Try a normal install, fall back to fixing deps if needed
+          sudo apt install -y /tmp/chrome.deb || (sudo apt-get -f install -y && sudo apt install -y /tmp/chrome.deb)
+          google-chrome --version
+
+      - name: Upgrade pip and install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Make entrypoint executable
+        run: chmod +x ./entrypoint.sh
+
+      - name: Show entrypoint for debug
+        run: |
+          echo "Using entrypoint.sh at: $(pwd)/entrypoint.sh"
+          echo "First lines of entrypoint.sh:"
+          sed -n '1,80p' ./entrypoint.sh || true
+
+      - name: Run tests via entrypoint.sh (only override envs when inputs provided)
+        env:
+          # keep empty here so entrypoint.sh defaults are used unless we set them below
+          # secrets should be added here if you need them e.g. EXTERNAL_API_KEY: ${{ secrets.API_KEY }}
+        run: |
+          set -euo pipefail
+
+          # Only export when workflow input provided (preserve entrypoint.sh defaults otherwise)
+          if [ -n "${{ github.event.inputs.base_url }}" ]; then
+            echo "Overriding BASE_URL -> '${{ github.event.inputs.base_url }}'"
+            export BASE_URL="${{ github.event.inputs.base_url }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.marker }}" ]; then
+            echo "Overriding MARKER -> '${{ github.event.inputs.marker }}'"
+            export MARKER="${{ github.event.inputs.marker }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.xdist }}" ]; then
+            echo "Overriding XDIST -> '${{ github.event.inputs.xdist }}'"
+            export XDIST="${{ github.event.inputs.xdist }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.headless }}" ]; then
+            echo "Overriding HEADLESS -> '${{ github.event.inputs.headless }}'"
+            export HEADLESS="${{ github.event.inputs.headless }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.extra_args }}" ]; then
+            echo "Overriding EXTRA_ARGS -> '${{ github.event.inputs.extra_args }}'"
+            export EXTRA_ARGS="${{ github.event.inputs.extra_args }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.reruns }}" ]; then
+            echo "Overriding RERUNS -> '${{ github.event.inputs.reruns }}'"
+            export RERUNS="${{ github.event.inputs.reruns }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.reruns_delay }}" ]; then
+            echo "Overriding RERUNS_DELAY -> '${{ github.event.inputs.reruns_delay }}'"
+            export RERUNS_DELAY="${{ github.event.inputs.reruns_delay }}"
+          fi
+
+          echo "Final environment (selected):"
+          echo "  BASE_URL=${BASE_URL:-<default from script>}"
+          echo "  MARKER=${MARKER:-<default from script>}"
+          echo "  XDIST=${XDIST:-<default from script>}"
+          echo "  HEADLESS=${HEADLESS:-<default from script>}"
+          echo "  RERUNS=${RERUNS:-<default from script>}"
+          echo "  RERUNS_DELAY=${RERUNS_DELAY:-<default from script>}"
+          echo "  EXTRA_ARGS=${EXTRA_ARGS:-<default from script>}"
+
+          # Run your entrypoint (it builds the pytest command and runs pytest)
+          exec ./entrypoint.sh

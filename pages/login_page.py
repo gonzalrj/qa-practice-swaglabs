@@ -13,7 +13,7 @@ class LoginPage(BasePage):
     # endregion
 
     # region Page methods
-    def _login_user(self, username, pwd):
+    def _execute_login(self, username: str, pwd: str):
         super()._type_text(self._username_fld, username)
         super()._type_text(self._pwd_fld, pwd)
         super()._click(self._login_btn)
