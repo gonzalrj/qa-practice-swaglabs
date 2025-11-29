@@ -1,4 +1,4 @@
-name: Manual Selenium Test Run (Python 3.12 + Chrome)
+name: Manual Selenium Test Run Python 3.12 and Chrome
 
 on:
   workflow_dispatch:
@@ -53,7 +53,6 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y wget unzip
           wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-          # Try a normal install, fall back to fixing deps if needed
           sudo apt install -y /tmp/chrome.deb || (sudo apt-get -f install -y && sudo apt install -y /tmp/chrome.deb)
           google-chrome --version
 
@@ -65,20 +64,16 @@ jobs:
       - name: Make entrypoint executable
         run: chmod +x ./entrypoint.sh
 
-      - name: Show entrypoint for debug
+      - name: Show entrypoint (debug)
         run: |
-          echo "Using entrypoint.sh at: $(pwd)/entrypoint.sh"
-          echo "First lines of entrypoint.sh:"
-          sed -n '1,80p' ./entrypoint.sh || true
+          echo "Using entrypoint at: $(pwd)/entrypoint.sh"
+          sed -n '1,120p' ./entrypoint.sh || true
 
-      - name: Run tests via entrypoint.sh (only override envs when inputs provided)
-        env:
-          # keep empty here so entrypoint.sh defaults are used unless we set them below
-          # secrets should be added here if you need them e.g. EXTERNAL_API_KEY: ${{ secrets.API_KEY }}
+      - name: Run tests via entrypoint.sh (override envs only if inputs provided)
         run: |
           set -euo pipefail
 
-          # Only export when workflow input provided (preserve entrypoint.sh defaults otherwise)
+          # Export inputs only when non-empty so entrypoint.sh defaults remain intact
           if [ -n "${{ github.event.inputs.base_url }}" ]; then
             echo "Overriding BASE_URL -> '${{ github.event.inputs.base_url }}'"
             export BASE_URL="${{ github.event.inputs.base_url }}"
@@ -114,14 +109,13 @@ jobs:
             export RERUNS_DELAY="${{ github.event.inputs.reruns_delay }}"
           fi
 
-          echo "Final environment (selected):"
-          echo "  BASE_URL=${BASE_URL:-<default from script>}"
-          echo "  MARKER=${MARKER:-<default from script>}"
-          echo "  XDIST=${XDIST:-<default from script>}"
-          echo "  HEADLESS=${HEADLESS:-<default from script>}"
-          echo "  RERUNS=${RERUNS:-<default from script>}"
-          echo "  RERUNS_DELAY=${RERUNS_DELAY:-<default from script>}"
-          echo "  EXTRA_ARGS=${EXTRA_ARGS:-<default from script>}"
+          # Show only selected envs (if present)
+          [ -n "${BASE_URL-}" ] && echo "  BASE_URL=${BASE_URL}"
+          [ -n "${MARKER-}" ] && echo "  MARKER=${MARKER}"
+          [ -n "${XDIST-}" ] && echo "  XDIST=${XDIST}"
+          [ -n "${HEADLESS-}" ] && echo "  HEADLESS=${HEADLESS}"
+          [ -n "${RERUNS-}" ] && echo "  RERUNS=${RERUNS}"
+          [ -n "${RERUNS_DELAY-}" ] && echo "  RERUNS_DELAY=${RERUNS_DELAY}"
+          [ -n "${EXTRA_ARGS-}" ] && echo "  EXTRA_ARGS=${EXTRA_ARGS}"
 
-          # Run your entrypoint (it builds the pytest command and runs pytest)
           exec ./entrypoint.sh
