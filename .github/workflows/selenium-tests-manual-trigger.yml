@@ -67,10 +67,12 @@ jobs:
           sudo apt install -y /tmp/chrome.deb || (sudo apt-get -f install -y && sudo apt install -y /tmp/chrome.deb)
           google-chrome --version
 
-      - name: Upgrade pip and install Python dependencies
+      - name: Upgrade pip and install Python dependencies (including webdriver-manager)
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # ensure webdriver-manager is present so chromedriver matches installed Chrome
+          pip install webdriver-manager
 
       - name: Show Chrome & system info
         run: |
@@ -89,7 +91,7 @@ jobs:
       - name: Make entrypoint executable
         run: chmod +x ./entrypoint.sh
 
-      - name: Make shard script executbale
+      - name: Make shard script executable
         run: chmod +x .github/scripts/shard.py
 
       - name: Make merge-allure script executable
@@ -105,7 +107,7 @@ jobs:
           SHARD_INDEX: ${{ matrix.shard_index }}
           SHARD_COUNT: ${{ matrix.shard_count }}
 
-          # Optional overrides passed directly as envs (may be empty)
+          # Optional overrides passed directly as envs (can be empty)
           XDIST: ${{ github.event.inputs.xdist }}
           BASE_URL: ${{ github.event.inputs.base_url }}
           MARKER: ${{ github.event.inputs.marker }}
@@ -141,6 +143,24 @@ jobs:
 
           # Delegate sharding to the external script
           python .github/scripts/shard.py
+
+      - name: Upload chromedriver log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromedriver-log-${{ matrix.shard_index }}
+          path: /tmp/chromedriver.log
+          if-no-files-found: ignore
+
+      - name: Print chromedriver log
+        if: failure() || always()
+        run: |
+          echo "=== CHROMEDRIVER LOG ==="
+          if [ -f /tmp/chromedriver.log ]; then
+            sed -n '1,400p' /tmp/chromedriver.log
+          else
+            echo "No chromedriver log found at /tmp/chromedriver.log"
+          fi
 
       - name: Install Node (for Allure CLI)
         uses: actions/setup-node@v4
@@ -199,8 +219,6 @@ jobs:
           # If allure is not present, install via npm
           if ! command -v allure >/dev/null 2>&1; then
             echo "Allure CLI not found — installing via npm"
-            # Install Node + npm (GitHub runner usually has node but ensure)
-            # Use the actions/setup-node earlier if you prefer; here we attempt install only
             npm install -g allure-commandline --no-fund --no-audit
           else
             echo "Allure CLI present at: $(which allure)"
