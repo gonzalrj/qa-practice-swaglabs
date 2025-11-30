@@ -86,27 +86,40 @@ jobs:
           SHARD_INDEX: ${{ matrix.shard_index }}
           SHARD_COUNT: ${{ matrix.shard_count }}
 
-          # Optional overrides
-          XDIST_INPUT: ${{ github.event.inputs.xdist }}
-          BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
-          MARKER_INPUT: ${{ github.event.inputs.marker }}
-          HEADLESS_INPUT: ${{ github.event.inputs.headless }}
-          EXTRA_ARGS_INPUT: ${{ github.event.inputs.extra_args }}
-          RERUNS_INPUT: ${{ github.event.inputs.reruns }}
-          RERUNS_DELAY_INPUT: ${{ github.event.inputs.reruns_delay }}
+          # Optional overrides passed directly as envs (may be empty)
+          XDIST: ${{ github.event.inputs.xdist }}
+          BASE_URL: ${{ github.event.inputs.base_url }}
+          MARKER: ${{ github.event.inputs.marker }}
+          HEADLESS: ${{ github.event.inputs.headless }}
+          EXTRA_ARGS: ${{ github.event.inputs.extra_args }}
+          RERUNS: ${{ github.event.inputs.reruns }}
+          RERUNS_DELAY: ${{ github.event.inputs.reruns_delay }}
+
         run: |
           set -euo pipefail
 
           RESULTS_PATH="allure-results-${SHARD_INDEX}"
           mkdir -p "$RESULTS_PATH"
-          
-          # Append allure output path to EXTRA_ARGS
-          if [ -n "${EXTRA_ARGS}" ]; then
-            export EXTRA_ARGS="${EXTRA_ARGS} --alluredir=$RESULTS_PATH"
+
+          # Use safe expansions so 'set -u' won't fail if envs are absent.
+          # Append the --alluredir to EXTRA_ARGS; preserve user EXTRA_ARGS if present.
+          if [ -n "${EXTRA_ARGS:-}" ]; then
+            export EXTRA_ARGS="${EXTRA_ARGS} --alluredir=${RESULTS_PATH}"
           else
-            export EXTRA_ARGS="--alluredir=$RESULTS_PATH"
+            export EXTRA_ARGS="--alluredir=${RESULTS_PATH}"
           fi
-          
+
+          # OPTIONAL guarded exports (only set when non-empty). Use :- safe form.
+          [ -n "${BASE_URL:-}" ]      && export BASE_URL="${BASE_URL:-}"
+          [ -n "${MARKER:-}" ]        && export MARKER="${MARKER:-}"
+          [ -n "${XDIST:-}" ]         && export XDIST="${XDIST:-}"
+          [ -n "${HEADLESS:-}" ]      && export HEADLESS="${HEADLESS:-}"
+          [ -n "${RERUNS:-}" ]        && export RERUNS="${RERUNS:-}"
+          [ -n "${RERUNS_DELAY:-}" ]  && export RERUNS_DELAY="${RERUNS_DELAY:-}"
+
+          # Ensure script is executable (safe noop if already set)
+          chmod +x .github/scripts/shard.py || true
+
           # Delegate sharding to the external script
           python .github/scripts/shard.py
 
