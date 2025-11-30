@@ -6,12 +6,14 @@ from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 
 def pytest_addoption(parser):
     parser.addoption("--base-url", action="store", help="Base URL for tests")
     parser.addoption("--browser", action="store", default="chrome", help="Browser: chrome, firefox, or edge")
-    parser.addoption("--headless", action="store_true", default=False, help="Run browser in headless mode")
+    parser.addoption("--headless", action="store_true", default=True, help="Run browser in headless mode")
 
 
 @pytest.fixture
@@ -55,10 +57,6 @@ def driver(request):
         options.add_argument("--disable-background-timer-throttling")
         options.add_argument("--disable-infobars")
         options.add_argument("--no-first-run")
-
-        # USE webdriver-manager to avoid version mismatch
-        from selenium.webdriver.chrome.service import Service
-        from webdriver_manager.chrome import ChromeDriverManager
 
         chromedriver_log = os.environ.get("CHROMEDRIVER_LOG", "/tmp/chromedriver.log")
 
