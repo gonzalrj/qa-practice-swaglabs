@@ -82,14 +82,14 @@ jobs:
           SHARD_INDEX: ${{ matrix.shard_index }}
           SHARD_COUNT: ${{ matrix.shard_count }}
 
-          # Pass workflow dispatch inputs directly to shard.py
-          BASE_URL: ${{ github.event.inputs.base_url }}
-          MARKER: ${{ github.event.inputs.marker }}
-          XDIST: ${{ github.event.inputs.xdist }}
-          HEADLESS: ${{ github.event.inputs.headless }}
-          EXTRA_ARGS: ${{ github.event.inputs.extra_args }}
-          RERUNS: ${{ github.event.inputs.reruns }}
-          RERUNS_DELAY: ${{ github.event.inputs.reruns_delay }}
+          # Use input if non-empty, else fallback to default values
+          BASE_URL: ${{ github.event.inputs.base_url != '' && github.event.inputs.base_url || 'https://www.saucedemo.com/' }}
+          MARKER:   ${{ github.event.inputs.marker != '' && github.event.inputs.marker || 'regression' }}
+          XDIST:    ${{ github.event.inputs.xdist != '' && github.event.inputs.xdist || 'auto' }}
+          HEADLESS: ${{ github.event.inputs.headless != '' && github.event.inputs.headless || 'true' }}
+          EXTRA_ARGS: ${{ github.event.inputs.extra_args != '' && github.event.inputs.extra_args || '' }}
+          RERUNS:   ${{ github.event.inputs.reruns != '' && github.event.inputs.reruns || '1' }}
+          RERUNS_DELAY: ${{ github.event.inputs.reruns_delay != '' && github.event.inputs.reruns_delay || '1' }}
 
         run: |
           set -euo pipefail

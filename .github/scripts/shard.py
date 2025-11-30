@@ -81,12 +81,12 @@ def build_pytest_cmd(shard_tests: List[str]) -> List[str]:
         cmd += ["-n", xdist]
 
     # base url (pytest option expected by your tests)
-    base_url = os.environ.get("BASE_URL", "https://www.saucedemo.com").strip()
+    base_url = os.environ.get("BASE_URL", "").strip()
     if base_url:
         cmd += ["--base-url", base_url]
 
     # marker
-    marker = os.environ.get("MARKER", "regression").strip()
+    marker = os.environ.get("MARKER", "").strip()
     if marker:
         cmd += ["-m", marker]
 
@@ -96,17 +96,17 @@ def build_pytest_cmd(shard_tests: List[str]) -> List[str]:
         cmd += ["--headless"]
 
     # reruns
-    reruns = os.environ.get("RERUNS", "1").strip()
+    reruns = os.environ.get("RERUNS", "").strip()
     if reruns:
         cmd += ["--reruns", reruns]
 
     # reruns delay
-    reruns_delay = os.environ.get("RERUNS_DELAY", "1").strip()
+    reruns_delay = os.environ.get("RERUNS_DELAY", "").strip()
     if reruns_delay:
         cmd += ["--reruns-delay", reruns_delay]
 
     # extra args (e.g. --alluredir=allure-results-0). Shell-split safely.
-    extra = os.environ.get("EXTRA_ARGS", "--alluredir allure-results").strip()
+    extra = os.environ.get("EXTRA_ARGS", "").strip()
     if extra:
         try:
             cmd += shlex.split(extra)
