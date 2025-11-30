@@ -130,7 +130,7 @@ jobs:
           
       # Use the Allure Report action to generate and deploy the report
       - name: Generate Allure Report and Deploy to GitHub Pages
-        uses: simple-elf/allure-report-action@v2
+        uses: simple-elf/allure-report-action@master
         # Note: You might need to configure permissions in your repo settings
         # to allow this action to create the report page.
         with:
