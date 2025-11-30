@@ -24,55 +24,11 @@ def driver(request):
     browser = request.config.getoption("--browser").lower()
     headless = request.config.getoption("--headless")
 
-    selenium_remote_url = os.environ.get("SELENIUM_REMOTE_URL")
-
     # Common Chrome prefs (disable password manager / credential service)
     chrome_prefs = {
         "profile.password_manager_leak_detection": False,
         "credentials_enable_service": False
     }
-
-    # region: Remote Driver
-    # -------------
-    # REMOTE DRIVER
-    # -------------
-    if selenium_remote_url:
-        print(f"Using Remote WebDriver: {selenium_remote_url}")
-
-        if browser == "chrome":
-            options = ChromeOptions()
-            options.add_experimental_option("prefs", chrome_prefs)
-            if headless:
-                options.add_argument("--headless=new")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--window-size=1920,1080")
-
-        elif browser == "firefox":
-            options = FirefoxOptions()
-            if headless:
-                options.add_argument("--headless")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--width=1920")
-            options.add_argument("--height=1080")
-
-        elif browser == "edge":
-            options = EdgeOptions()
-            if headless:
-                options.add_argument("--headless=new")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--window-size=1920,1080")
-
-        else:
-            raise Exception(f"Browser {browser} is not supported!")
-
-        driver = webdriver.Remote(command_executor=selenium_remote_url, options=options)
-        yield driver
-        driver.quit()
-        return
-    # endregion
 
     # -------------
     # LOCAL DRIVER (explicit Service -> bypass Selenium Manager)
@@ -85,8 +41,14 @@ def driver(request):
         if headless:
             options.add_argument("--headless=new")
             options.add_argument("--window-size=1920,1080")
+        # CI flags
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-background-timer-throttling")
+        options.add_argument("--disable-infobars")
+        options.add_argument("--no-first-run")
 
         driver = webdriver.Chrome(options=options)
 

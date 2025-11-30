@@ -26,6 +26,7 @@ class TestLogin:
 
     @pytest.mark.smoke
     @pytest.mark.regression
+    @pytest.mark.login
     @allure.title("Verify successful login using valid credentials")
     def test_success_login(self, driver, base_url):
         with allure.step("Login user using valid credentials."):
@@ -38,6 +39,7 @@ class TestLogin:
             self.menu.logout_user(base_url)
 
     @pytest.mark.regression
+    @pytest.mark.login
     @allure.title("Verify failed login using invalid credentials")
     def test_invalid_login(self, driver, base_url):
         with allure.step("Login using invalid credentials."):
@@ -48,6 +50,7 @@ class TestLogin:
                                                                             "should be returned.")
 
     @pytest.mark.regression
+    @pytest.mark.login
     @allure.title("Verify locked out user")
     def test_lockedout_login(self, driver, base_url):
         with allure.step("Login user using locked out credentials."):
