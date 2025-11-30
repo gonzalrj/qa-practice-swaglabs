@@ -96,12 +96,12 @@ def build_pytest_cmd(shard_tests: List[str]) -> List[str]:
         cmd += ["--headless"]
 
     # reruns
-    reruns = os.environ.get("RERUNS", 1)
+    reruns = os.environ.get("RERUNS", "1").strip()
     if reruns:
         cmd += ["--reruns", reruns]
 
     # reruns delay
-    reruns_delay = os.environ.get("RERUNS_DELAY", 1)
+    reruns_delay = os.environ.get("RERUNS_DELAY", "1").strip()
     if reruns_delay:
         cmd += ["--reruns-delay", reruns_delay]
 
