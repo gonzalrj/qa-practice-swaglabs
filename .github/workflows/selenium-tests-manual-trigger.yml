@@ -38,6 +38,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
+    env:
+      CHROMEDRIVER_LOG: /tmp/chromedriver.log
+      GECKODRIVER_LOG: /tmp/geckodriver.log
+      EDGEDRIVER_LOG: /tmp/edgedriver.log
+
     strategy:
       matrix:
         shard_index: [0,1]
@@ -66,6 +71,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Debug: Show Chrome & system info
+        run: |
+          echo "=== Chrome versions ==="
+          google-chrome --version || true
+          google-chrome-stable --version || true
+          chromium-browser --version || true
+          echo
+          echo "=== uname / lsb_release ==="
+          uname -a || true
+          lsb_release -a || true
+          echo
+          echo "=== /etc/os-release ==="
+          cat /etc/os-release || true
 
       - name: Make entrypoint executable
         run: chmod +x ./entrypoint.sh
