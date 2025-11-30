@@ -38,8 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
-    # Edit this matrix to increase/reduce number of nodes.
-    # For example, to run 4 nodes: shard_index: [0,1,2,3] and shard_count: [4]
     strategy:
       matrix:
         shard_index: [0,1]
@@ -81,7 +79,6 @@ jobs:
         env:
           SHARD_INDEX: ${{ matrix.shard_index }}
           SHARD_COUNT: ${{ matrix.shard_count }}
-          # If you still want internal xdist inside each node, set XDIST input or default in entrypoint.sh
           XDIST_INPUT: ${{ github.event.inputs.xdist }}
           BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
           MARKER_INPUT: ${{ github.event.inputs.marker }}
@@ -92,7 +89,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Per-shard Allure results directory to avoid collisions
           RESULTS_PATH="allure-results-${SHARD_INDEX}"
           mkdir -p "$RESULTS_PATH"
           export EXTRA_ARGS="--alluredir=$RESULTS_PATH"
@@ -133,7 +129,6 @@ jobs:
             export RERUNS_DELAY="${RERUNS_DELAY_INPUT}"
           fi
 
-          # Show picked envs (debug)
           [ -n "${BASE_URL-}" ] && echo "  BASE_URL=${BASE_URL}"
           [ -n "${MARKER-}" ] && echo "  MARKER=${MARKER}"
           [ -n "${XDIST-}" ] && echo "  XDIST=${XDIST}"
@@ -142,51 +137,64 @@ jobs:
           [ -n "${RERUNS_DELAY-}" ] && echo "  RERUNS_DELAY=${RERUNS_DELAY}"
           [ -n "${EXTRA_ARGS-}" ] && echo "  EXTRA_ARGS=${EXTRA_ARGS}"
 
-          # --- SHARDING: collect tests once and run subset on this shard ---
-          python - <<'PY'
-          import os, subprocess, sys, shlex
+          # --- SHARDING LOGIC ---
+          python << 'PY'
+              import os, subprocess, sys, shlex, re
 
-          si = int(os.environ['SHARD_INDEX'])
-          sc = int(os.environ['SHARD_COUNT'])
-          
-          # Collect test nodeids (one per line). Use -q to simplify output.
-          try:
-              out = subprocess.check_output(["pytest", "--collect-only", "-q"], text=True)
-          except subprocess.CalledProcessError as e:
-              print("pytest collection failed:", e)
-              sys.exit(e.returncode)
-          
-          tests = [t.strip() for t in out.splitlines() if t.strip()]
-          if not tests:
-              print("No tests collected. Exiting successfully.")
-              sys.exit(0)
-          
-          shard_tests = [t for i,t in enumerate(tests) if i % sc == si]
-          print(f"Collected {len(tests)} tests -> running {len(shard_tests)} tests on shard {si}/{sc}")
-          
-          if not shard_tests:
-              print("No tests for this shard, exiting 0")
-              sys.exit(0)
-          
-          # Build pytest args: allow entrypoint.sh default handling but to keep this self-contained we run pytest directly.
-          # If you prefer to use entrypoint.sh, you can alter this to exec ./entrypoint.sh with envs already set above.
-          xdist = os.environ.get('XDIST','').strip()
-          base_args = ["pytest", "-q"]
-          if xdist:
-              base_args += ["-n", xdist]
-          
-          # You may append EXTRA_ARGS from env (already set to include --alluredir)
-          extra_args = os.environ.get('EXTRA_ARGS','').strip()
-          if extra_args:
-              # split safely
-              base_args += shlex.split(extra_args)
-          
-          base_args += shard_tests
-          
-          print("Running command:", " ".join(base_args))
-          rc = subprocess.call(base_args)
-          sys.exit(rc)
-          PY
+              si = int(os.environ['SHARD_INDEX'])
+              sc = int(os.environ['SHARD_COUNT'])
+
+              try:
+                  out = subprocess.check_output(["pytest", "--collect-only", "-q"], text=True)
+              except subprocess.CalledProcessError as e:
+                  print("pytest collection failed:", e)
+                  sys.exit(e.returncode)
+
+              lines = [l.strip() for l in out.splitlines() if l.strip()]
+
+              def looks_like_nodeid(line: str) -> bool:
+                  if "::" in line:
+                      return True
+                  if line.endswith(".py") and "/" in line:
+                      return True
+                  if re.match(r'^\d+\s+tests?\s+collected', line):
+                      return False
+                  if "no tests ran" in line.lower():
+                      return False
+                  if line.lower().startswith("error:"):
+                      return False
+                  if "tests/" in line or "/test_" in line:
+                      return True
+                  return False
+
+              tests = [ln for ln in lines if looks_like_nodeid(ln)]
+
+              if not tests:
+                  print("No valid test nodeids parsed:")
+                  print(out)
+                  sys.exit(0)
+
+              shard_tests = [t for i, t in enumerate(tests) if i % sc == si]
+
+              print(f"Collected {len(tests)} nodeids → running {len(shard_tests)} on shard {si}/{sc}")
+
+              if not shard_tests:
+                  print("Nothing to run on this shard.")
+                  sys.exit(0)
+
+              xdist = os.environ.get("XDIST", "").strip()
+              extra = os.environ.get("EXTRA_ARGS", "").strip()
+
+              cmd = ["pytest", "-q"]
+              if xdist:
+                  cmd += ["-n", xdist]
+              if extra:
+                  cmd += shlex.split(extra)
+              cmd += shard_tests
+
+              print("Running:", " ".join(cmd))
+              sys.exit(subprocess.call(cmd))
+              PY
 
       - name: Install Node (for Allure CLI)
         uses: actions/setup-node@v4
@@ -239,17 +247,13 @@ jobs:
           set -euo pipefail
           mkdir -p merged-allure-results
 
-          # Merge any directory named allure-results* found under downloaded artifacts
           shopt -s globstar nullglob
           merged_any=0
           for dir in artifacts/**/allure-results*; do
             if [ -d "$dir" ]; then
               echo "Merging results from: $dir"
-              # To avoid name collisions we copy into a shard-prefixed subdir, then move files out.
-              # Copy everything preserving filenames into a temp dir so we can flatten safely.
               tmpdir="$(mktemp -d)"
               cp -r "$dir"/* "$tmpdir/" || true
-              # Move files into merged dir; if duplicate names exist they will be overwritten.
               mv "$tmpdir"/* merged-allure-results/ || true
               rm -rf "$tmpdir" || true
               merged_any=1
