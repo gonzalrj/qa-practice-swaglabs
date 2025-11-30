@@ -69,9 +69,17 @@ jobs:
           echo "Using entrypoint at: $(pwd)/entrypoint.sh"
           sed -n '1,120p' ./entrypoint.sh || true
 
-      - name: Run tests via entrypoint.sh (override envs only if inputs provided)
+      - name: Run tests via entrypoint.sh and generate results
         run: |
           set -euo pipefail
+          
+          # Define where results go. This is a fixed path the next step expects.
+          RESULTS_PATH="allure-results"
+          mkdir -p $RESULTS_PATH # Ensure the directory exists
+
+          # Export inputs only when non-empty
+          # We force EXTRA_ARGS here to ensure allure results are generated at the known path
+          export EXTRA_ARGS="--alluredir $RESULTS_PATH"
 
           # Export inputs only when non-empty so entrypoint.sh defaults remain intact
           if [ -n "${{ github.event.inputs.base_url }}" ]; then
