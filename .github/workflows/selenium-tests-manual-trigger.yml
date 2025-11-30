@@ -4,31 +4,31 @@ on:
   workflow_dispatch:
     inputs:
       base_url:
-        description: "Optional: override BASE_URL (leave empty to use entrypoint.sh default)"
+        description: "Optional: override BASE_URL"
         required: false
         default: ""
       marker:
-        description: "Optional: pytest marker (leave empty to use entrypoint.sh default)"
+        description: "Optional: pytest marker"
         required: false
         default: ""
       xdist:
-        description: "Optional: pytest-xdist -n value (e.g. auto). Leave empty to use entrypoint.sh default"
+        description: "Optional: pytest-xdist -n value"
         required: false
         default: ""
       headless:
-        description: "Optional: override HEADLESS (true|false). Leave empty to use entrypoint.sh default"
+        description: "Optional: HEADLESS true|false"
         required: false
         default: ""
       extra_args:
-        description: "Optional: extra pytest args (single string). Leave empty to use entrypoint.sh default"
+        description: "Optional: extra pytest args"
         required: false
         default: ""
       reruns:
-        description: "Optional: number of reruns (--reruns). Leave empty to use entrypoint.sh default"
+        description: "Optional: --reruns"
         required: false
         default: ""
       reruns_delay:
-        description: "Optional: rerun delay (--reruns-delay). Leave empty to use entrypoint.sh default"
+        description: "Optional: --reruns-delay"
         required: false
         default: ""
 
@@ -67,92 +67,53 @@ jobs:
           sudo apt install -y /tmp/chrome.deb || (sudo apt-get -f install -y && sudo apt install -y /tmp/chrome.deb)
           google-chrome --version
 
-      - name: Upgrade pip and install Python dependencies
+      - name: Install dependencies (Python)
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Show Chrome & system info
+      - name: Make shard scripts executable
         run: |
-          echo "=== Chrome versions ==="
-          google-chrome --version || true
-          google-chrome-stable --version || true
-          chromium-browser --version || true
-          echo
-          echo "=== uname / lsb_release ==="
-          uname -a || true
-          lsb_release -a || true
-          echo
-          echo "=== /etc/os-release ==="
-          cat /etc/os-release || true
-
-      - name: Make entrypoint executable
-        run: chmod +x ./entrypoint.sh
-
-      - name: Make shard script executable
-        run: chmod +x .github/scripts/shard.py
-
-      - name: Make merge-allure script executable
-        run: chmod +x .github/scripts/merge_allure.py
-
-      - name: Show entrypoint (debug)
-        run: |
-          echo "Using entrypoint at: $(pwd)/entrypoint.sh"
-          sed -n '1,120p' ./entrypoint.sh || true
-
-      # -------------------------
-      # PREPARE ENV: source defaults from entrypoint.sh --print-env
-      # -------------------------
-      - name: Prepare env from entrypoint.sh (export defaults)
-        env:
-          # pass workflow dispatch inputs as *_INPUT so entrypoint can prefer them
-          BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
-          MARKER_INPUT: ${{ github.event.inputs.marker }}
-          XDIST_INPUT: ${{ github.event.inputs.xdist }}
-          HEADLESS_INPUT: ${{ github.event.inputs.headless }}
-          EXTRA_ARGS_INPUT: ${{ github.event.inputs.extra_args }}
-          RERUNS_INPUT: ${{ github.event.inputs.reruns }}
-          RERUNS_DELAY_INPUT: ${{ github.event.inputs.reruns_delay }}
-        run: |
-          set -euo pipefail
-          echo "Generating env exports from entrypoint.sh..."
-          ./entrypoint.sh --print-env > /tmp/entrypoint.env
-          set -o allexport
-          # shellcheck disable=SC1090
-          . /tmp/entrypoint.env
-          set +o allexport
-
-          echo "Prepared envs:"
-          echo "  BASE_URL=${BASE_URL:-<empty>}"
-          echo "  MARKER=${MARKER:-<empty>}"
-          echo "  XDIST=${XDIST:-<empty>}"
-          echo "  HEADLESS=${HEADLESS:-<empty>}"
-          echo "  EXTRA_ARGS=${EXTRA_ARGS:-<empty>}"
-          echo "  RERUNS=${RERUNS:-<empty>}"
-          echo "  RERUNS_DELAY=${RERUNS_DELAY:-<empty>}"
+          chmod +x .github/scripts/shard.py
+          chmod +x .github/scripts/merge_allure.py
 
       - name: Run sharded tests on node ${{ matrix.shard_index }} / ${{ matrix.shard_count }}
         env:
           SHARD_INDEX: ${{ matrix.shard_index }}
           SHARD_COUNT: ${{ matrix.shard_count }}
+
+          # Pass workflow dispatch inputs directly to shard.py
+          BASE_URL: ${{ github.event.inputs.base_url }}
+          MARKER: ${{ github.event.inputs.marker }}
+          XDIST: ${{ github.event.inputs.xdist }}
+          HEADLESS: ${{ github.event.inputs.headless }}
+          EXTRA_ARGS: ${{ github.event.inputs.extra_args }}
+          RERUNS: ${{ github.event.inputs.reruns }}
+          RERUNS_DELAY: ${{ github.event.inputs.reruns_delay }}
+
         run: |
           set -euo pipefail
 
+          # Per-shard allure results directory
           RESULTS_PATH="allure-results-${SHARD_INDEX}"
           mkdir -p "$RESULTS_PATH"
 
-          # Use safe expansions so 'set -u' won't fail if envs are absent.
-          # Append the --alluredir to EXTRA_ARGS; preserve user EXTRA_ARGS if present.
+          # add per-shard allure directory to EXTRA_ARGS
           if [ -n "${EXTRA_ARGS:-}" ]; then
             export EXTRA_ARGS="${EXTRA_ARGS} --alluredir=${RESULTS_PATH}"
           else
             export EXTRA_ARGS="--alluredir=${RESULTS_PATH}"
           fi
 
-          # Ensure script is executable (safe noop if already set)
-          chmod +x .github/scripts/shard.py || true
+          echo "=== ENV BEFORE SHARD ==="
+          echo "BASE_URL=${BASE_URL}"
+          echo "MARKER=${MARKER}"
+          echo "XDIST=${XDIST}"
+          echo "HEADLESS=${HEADLESS}"
+          echo "EXTRA_ARGS=${EXTRA_ARGS}"
+          echo "RERUNS=${RERUNS}"
+          echo "RERUNS_DELAY=${RERUNS_DELAY}"
 
-          # Delegate sharding to the external script (shard.py will read BASE_URL, XDIST, MARKER, etc)
           python .github/scripts/shard.py
 
       - name: Upload chromedriver log
@@ -170,7 +131,7 @@ jobs:
           if [ -f /tmp/chromedriver.log ]; then
             sed -n '1,400p' /tmp/chromedriver.log
           else
-            echo "No chromedriver log found at /tmp/chromedriver.log"
+            echo "No chromedriver log found"
           fi
 
       - name: Install Node (for Allure CLI)
@@ -178,13 +139,12 @@ jobs:
         with:
           node-version: "18"
 
-      - name: Generate Allure report (per-shard) (optional)
+      - name: Generate Allure report (per-shard)
         run: |
           if [ -d "allure-results-${{ matrix.shard_index }}" ] && [ "$(ls -A allure-results-${{ matrix.shard_index }})" ]; then
             npm install -g allure-commandline --no-fund --no-audit
             mkdir -p "allure-report-${{ matrix.shard_index }}"
-            allure generate "allure-results-${{ matrix.shard_index }}" -o "allure-report-${{ matrix.shard_index }}" --clean || true
-            ls -la "allure-report-${{ matrix.shard_index }}" || true
+            allure generate "allure-results-${{ matrix.shard_index }}" -o "allure-report-${{ matrix.shard_index }}" --clean
           else
             echo "No allure-results for shard ${{ matrix.shard_index }}"
           fi
@@ -221,31 +181,23 @@ jobs:
 
       - name: Merge Allure results with script
         run: |
-          set -euo pipefail
           python .github/scripts/merge_allure.py
 
-      - name: Ensure Allure CLI is available (install if missing) and generate report
+      - name: Install Allure CLI (if missing)
         run: |
-          set -euo pipefail
-          # If allure is not present, install via npm
           if ! command -v allure >/dev/null 2>&1; then
-            echo "Allure CLI not found — installing via npm"
             npm install -g allure-commandline --no-fund --no-audit
-          else
-            echo "Allure CLI present at: $(which allure)"
           fi
 
-          # Generate HTML report from merged-allure-results if present
+      - name: Generate consolidated Allure report
+        run: |
           if [ -d "merged-allure-results" ] && [ "$(ls -A merged-allure-results)" ]; then
-            echo "Generating consolidated Allure HTML report..."
-            allure generate merged-allure-results -o allure-reports --clean || true
-            echo "Allure report location: ./allure-reports"
-            ls -la allure-reports || true
+            allure generate merged-allure-results -o allure-reports --clean
           else
-            echo "merged-allure-results missing or empty — skipping Allure generation."
+            echo "merged-allure-results empty — skipping report."
           fi
 
-      - name: Upload consolidated Allure results (raw merged results)
+      - name: Upload consolidated Allure results
         uses: actions/upload-artifact@v4
         with:
           name: merged-allure-results
