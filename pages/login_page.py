@@ -9,7 +9,7 @@ class LoginPage(BasePage):
     _pwd_fld = (By.ID, "password")
     _login_btn = (By.ID, "login-button")
     _err_msg = (By.CSS_SELECTOR, "h3[data-test='error']")
-    _lockout_err_msg = (By.XPATH, "//h3[contains(text(),'locked out')]")
+    # _lockout_err_msg = (By.XPATH, "//h3[contains(text(),'locked out')]")
     # endregion
 
     # region Page methods
@@ -18,11 +18,11 @@ class LoginPage(BasePage):
         super()._type_text(self._pwd_fld, pwd)
         super()._click(self._login_btn)
 
-    def _is_error_header_displayed(self, time) -> bool:
+    def _is_error_header_displayed(self, time=2) -> bool:
         return super()._is_element_visible(self._err_msg, time)
 
-    def _is_lockout_error_displayed(self, time) -> bool:
-        return super()._is_element_visible(self._lockout_err_msg, time)
+    def _get_error_message(self):
+        return super()._find_element(self._err_msg).text
     # endregion
 
 

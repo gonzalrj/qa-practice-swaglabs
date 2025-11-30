@@ -119,3 +119,19 @@ jobs:
           [ -n "${EXTRA_ARGS-}" ] && echo "  EXTRA_ARGS=${EXTRA_ARGS}"
 
           exec ./entrypoint.sh
+          
+      # Use the Allure Report action to generate and deploy the report
+      - name: Generate Allure Report and Deploy to GitHub Pages
+        uses: simple-elf/allure-report-action@v1.7
+        # Note: You might need to configure permissions in your repo settings
+        # to allow this action to create the report page.
+        with:
+          gh_pages: true
+          # Artifact server is the default way to host within the Actions UI
+          allure_history: true
+
+      - name: Upload Allure Report Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AllureReport
+          path: allure-history

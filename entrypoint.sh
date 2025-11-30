@@ -26,12 +26,13 @@ else
   set -- \
     -vv \
     --base-url "$BASE_URL" \
+    --browser "$BROWSER" \
     -m "$MARKER" \
     -n "$XDIST" \
     $HEADLESS_FLAG \
     --reruns "$RERUNS" \
     --reruns-delay "$RERUNS_DELAY" \
-    "$EXTRA_ARGS"
+    $EXTRA_ARGS
 
   # Run pytest with constructed args
   exec pytest "$@"
