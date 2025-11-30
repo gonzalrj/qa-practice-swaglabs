@@ -70,6 +70,12 @@ jobs:
       - name: Make entrypoint executable
         run: chmod +x ./entrypoint.sh
 
+      - name: Make shard script executbale
+        run: chmod +x .github/scripts/shard.py
+
+      - name: Make merge-allure script executable
+        run: chmod +x .github/scripts/merge_allure.py
+
       - name: Show entrypoint (debug)
         run: |
           echo "Using entrypoint at: $(pwd)/entrypoint.sh"
@@ -79,6 +85,8 @@ jobs:
         env:
           SHARD_INDEX: ${{ matrix.shard_index }}
           SHARD_COUNT: ${{ matrix.shard_count }}
+
+          # Optional overrides
           XDIST_INPUT: ${{ github.event.inputs.xdist }}
           BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
           MARKER_INPUT: ${{ github.event.inputs.marker }}
@@ -91,110 +99,16 @@ jobs:
 
           RESULTS_PATH="allure-results-${SHARD_INDEX}"
           mkdir -p "$RESULTS_PATH"
-          export EXTRA_ARGS="--alluredir=$RESULTS_PATH"
-
-          # Export inputs only when non-empty so entrypoint.sh defaults remain intact
-          if [ -n "${BASE_URL_INPUT-}" ]; then
-            echo "Overriding BASE_URL -> '${BASE_URL_INPUT}'"
-            export BASE_URL="${BASE_URL_INPUT}"
+          
+          # Append allure output path to EXTRA_ARGS
+          if [ -n "${EXTRA_ARGS}" ]; then
+            export EXTRA_ARGS="${EXTRA_ARGS} --alluredir=$RESULTS_PATH"
+          else
+            export EXTRA_ARGS="--alluredir=$RESULTS_PATH"
           fi
-
-          if [ -n "${MARKER_INPUT-}" ]; then
-            echo "Overriding MARKER -> '${MARKER_INPUT}'"
-            export MARKER="${MARKER_INPUT}"
-          fi
-
-          if [ -n "${XDIST_INPUT-}" ]; then
-            echo "Overriding XDIST -> '${XDIST_INPUT}'"
-            export XDIST="${XDIST_INPUT}"
-          fi
-
-          if [ -n "${HEADLESS_INPUT-}" ]; then
-            echo "Overriding HEADLESS -> '${HEADLESS_INPUT}'"
-            export HEADLESS="${HEADLESS_INPUT}"
-          fi
-
-          if [ -n "${EXTRA_ARGS_INPUT-}" ]; then
-            echo "Overriding EXTRA_ARGS -> '${EXTRA_ARGS_INPUT}'"
-            export EXTRA_ARGS="${EXTRA_ARGS_INPUT}"
-          fi
-
-          if [ -n "${RERUNS_INPUT-}" ]; then
-            echo "Overriding RERUNS -> '${RERUNS_INPUT}'"
-            export RERUNS="${RERUNS_INPUT}"
-          fi
-
-          if [ -n "${RERUNS_DELAY_INPUT-}" ]; then
-            echo "Overriding RERUNS_DELAY -> '${RERUNS_DELAY_INPUT}'"
-            export RERUNS_DELAY="${RERUNS_DELAY_INPUT}"
-          fi
-
-          [ -n "${BASE_URL-}" ] && echo "  BASE_URL=${BASE_URL}"
-          [ -n "${MARKER-}" ] && echo "  MARKER=${MARKER}"
-          [ -n "${XDIST-}" ] && echo "  XDIST=${XDIST}"
-          [ -n "${HEADLESS-}" ] && echo "  HEADLESS=${HEADLESS}"
-          [ -n "${RERUNS-}" ] && echo "  RERUNS=${RERUNS}"
-          [ -n "${RERUNS_DELAY-}" ] && echo "  RERUNS_DELAY=${RERUNS_DELAY}"
-          [ -n "${EXTRA_ARGS-}" ] && echo "  EXTRA_ARGS=${EXTRA_ARGS}"
-
-          # --- SHARDING LOGIC ---
-          python << 'PY'
-              import os, subprocess, sys, shlex, re
-
-              si = int(os.environ['SHARD_INDEX'])
-              sc = int(os.environ['SHARD_COUNT'])
-
-              try:
-                  out = subprocess.check_output(["pytest", "--collect-only", "-q"], text=True)
-              except subprocess.CalledProcessError as e:
-                  print("pytest collection failed:", e)
-                  sys.exit(e.returncode)
-
-              lines = [l.strip() for l in out.splitlines() if l.strip()]
-
-              def looks_like_nodeid(line: str) -> bool:
-                  if "::" in line:
-                      return True
-                  if line.endswith(".py") and "/" in line:
-                      return True
-                  if re.match(r'^\d+\s+tests?\s+collected', line):
-                      return False
-                  if "no tests ran" in line.lower():
-                      return False
-                  if line.lower().startswith("error:"):
-                      return False
-                  if "tests/" in line or "/test_" in line:
-                      return True
-                  return False
-
-              tests = [ln for ln in lines if looks_like_nodeid(ln)]
-
-              if not tests:
-                  print("No valid test nodeids parsed:")
-                  print(out)
-                  sys.exit(0)
-
-              shard_tests = [t for i, t in enumerate(tests) if i % sc == si]
-
-              print(f"Collected {len(tests)} nodeids → running {len(shard_tests)} on shard {si}/{sc}")
-
-              if not shard_tests:
-                  print("Nothing to run on this shard.")
-                  sys.exit(0)
-
-              xdist = os.environ.get("XDIST", "").strip()
-              extra = os.environ.get("EXTRA_ARGS", "").strip()
-
-              cmd = ["pytest", "-q"]
-              if xdist:
-                  cmd += ["-n", xdist]
-              if extra:
-                  cmd += shlex.split(extra)
-              cmd += shard_tests
-
-              print("Running:", " ".join(cmd))
-              sys.exit(subprocess.call(cmd))
-              PY
+          
+          # Delegate sharding to the external script
+          python .github/scripts/shard.py
 
       - name: Install Node (for Allure CLI)
         uses: actions/setup-node@v4
@@ -242,46 +156,32 @@ jobs:
           echo "Downloaded artifact tree:"
           ls -R artifacts || true
 
-      - name: Merge Allure results into merged-allure-results
+      - name: Merge Allure results with script
         run: |
           set -euo pipefail
-          mkdir -p merged-allure-results
+          python .github/scripts/merge_allure.py
 
-          shopt -s globstar nullglob
-          merged_any=0
-          for dir in artifacts/**/allure-results*; do
-            if [ -d "$dir" ]; then
-              echo "Merging results from: $dir"
-              tmpdir="$(mktemp -d)"
-              cp -r "$dir"/* "$tmpdir/" || true
-              mv "$tmpdir"/* merged-allure-results/ || true
-              rm -rf "$tmpdir" || true
-              merged_any=1
-            fi
-          done
-
-          if [ "$merged_any" -eq 0 ]; then
-            echo "No allure-results found in downloaded artifacts. Nothing to merge."
-            exit 0
+      - name: Ensure Allure CLI is available (install if missing) and generate report
+        run: |
+          set -euo pipefail
+          # If allure is not present, install via npm
+          if ! command -v allure >/dev/null 2>&1; then
+            echo "Allure CLI not found — installing via npm"
+            # Install Node + npm (GitHub runner usually has node but ensure)
+            # Use the actions/setup-node earlier if you prefer; here we attempt install only
+            npm install -g allure-commandline --no-fund --no-audit
+          else
+            echo "Allure CLI present at: $(which allure)"
           fi
 
-          echo "Merged results contents:"
-          ls -la merged-allure-results | sed -n '1,200p' || true
-
-      - name: Install Node (for Allure CLI)
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-
-      - name: Install Allure CLI (npm) and generate consolidated report
-        run: |
+          # Generate HTML report from merged-allure-results if present
           if [ -d "merged-allure-results" ] && [ "$(ls -A merged-allure-results)" ]; then
-            npm install -g allure-commandline --no-fund --no-audit
+            echo "Generating consolidated Allure HTML report..."
             allure generate merged-allure-results -o allure-reports --clean || true
-            echo "Allure report generated at ./allure-reports"
+            echo "Allure report location: ./allure-reports"
             ls -la allure-reports || true
           else
-            echo "merged-allure-results is empty — skipping Allure generation."
+            echo "merged-allure-results missing or empty — skipping Allure generation."
           fi
 
       - name: Upload consolidated Allure results (raw merged results)
