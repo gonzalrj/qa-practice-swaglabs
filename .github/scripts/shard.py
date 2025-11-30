@@ -7,19 +7,39 @@ import re
 
 
 def looks_like_nodeid(line: str) -> bool:
-    """Return True if the line looks like a pytest nodeid."""
-    if "::" in line:
-        return True
-    if line.endswith(".py") and "/" in line:
-        return True
-    if re.match(r'^\d+\s+tests?\s+collected', line):
-        return False
-    if "no tests ran" in line.lower():
+    """True if line looks like a pytest nodeid."""
+    line = line.strip()
+
+    # Skip warnings and noise
+    if line.lower().startswith(("warning:", "pytestwarning", "deprecationwarning")):
         return False
     if line.lower().startswith("error:"):
         return False
-    if "tests/" in line or "/test_" in line:
+
+    # Parametrized tests
+    if "::" in line:
         return True
+
+    # Unix path to file
+    if "/" in line and line.endswith(".py"):
+        return True
+
+    # Windows path to file
+    if "\\" in line and line.endswith(".py"):
+        return True
+
+    # Skip collection summary
+    if re.match(r'^\d+\s+tests?\s+collected', line):
+        return False
+
+    # Skip no-test lines
+    if "no tests ran" in line.lower():
+        return False
+
+    # Common pattern
+    if "tests/" in line or "/test_" in line or "\\test_" in line:
+        return True
+
     return False
 
 
@@ -45,6 +65,13 @@ def main():
         print(raw)
         sys.exit(0)
 
+    # Optional debug mode
+    if os.environ.get("SHARD_DEBUG") == "1":
+        print("Collected nodeids:")
+        for t in tests:
+            print(" -", t)
+        print()
+
     shard_tests = [t for i, t in enumerate(tests) if i % sc == si]
 
     print(f"Collected {len(tests)} tests → running {len(shard_tests)} on shard {si}/{sc}")
@@ -65,6 +92,9 @@ def main():
         cmd += shlex.split(extra)
 
     cmd += shard_tests
+
+    # Flush print buffer before pytest runs
+    sys.stdout.flush()
 
     print("Running:", " ".join(cmd))
     rc = subprocess.call(cmd)
