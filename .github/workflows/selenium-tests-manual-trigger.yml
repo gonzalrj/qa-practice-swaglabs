@@ -127,9 +127,6 @@ jobs:
       - name: Generate Allure Report
         uses: allure-report/allure-action@v2
         id: allure-report
-        with:
-          # This action automatically finds 'allure-results' and creates the HTML report in a temporary location
-          # It generates the report using the data from the previous step
 
       - name: Upload Allure Report Artifact
         uses: actions/upload-artifact@v4
