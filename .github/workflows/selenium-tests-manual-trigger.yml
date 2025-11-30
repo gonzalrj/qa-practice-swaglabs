@@ -1,4 +1,4 @@
-name: Manual Selenium Test Run inputs-enabled Python 3.12 Chrome
+name: Manual Selenium Test Run Python 3.12 Chrome
 
 on:
   workflow_dispatch:
