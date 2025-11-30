@@ -72,13 +72,8 @@ jobs:
       - name: Run tests via entrypoint.sh and generate results
         run: |
           set -euo pipefail
-          
-          # Define where results go. This is a fixed path the next step expects.
           RESULTS_PATH="allure-results"
-          mkdir -p $RESULTS_PATH # Ensure the directory exists
-
-          # Export inputs only when non-empty
-          # We force EXTRA_ARGS here to ensure allure results are generated at the known path
+          mkdir -p $RESULTS_PATH
           export EXTRA_ARGS="--alluredir $RESULTS_PATH"
 
           # Export inputs only when non-empty so entrypoint.sh defaults remain intact
@@ -129,17 +124,17 @@ jobs:
           exec ./entrypoint.sh
           
       # Use the Allure Report action to generate and deploy the report
-      - name: Generate Allure Report and Deploy to GitHub Pages
-        uses: simple-elf/allure-report-action@master
-        # Note: You might need to configure permissions in your repo settings
-        # to allow this action to create the report page.
+      - name: Generate Allure Report
+        uses: allure-report/allure-action@v2
+        id: allure-report
         with:
-          gh_pages: true
-          # Artifact server is the default way to host within the Actions UI
-          allure_history: true
+          # This action automatically finds 'allure-results' and creates the HTML report in a temporary location
+          # It generates the report using the data from the previous step
 
       - name: Upload Allure Report Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AllureReport
-          path: allure-history
+          name: AllureHTMLReport
+          # This pulls the dynamically generated path from the previous step's output
+          path: ${{ steps.allure-report.outputs.report_path }}
+          if-no-files-found: ignore
