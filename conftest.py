@@ -38,19 +38,36 @@ def driver(request):
     if browser == "chrome":
         options = ChromeOptions()
         options.add_experimental_option("prefs", chrome_prefs)
+
         if headless:
-            options.add_argument("--headless=new")
+            try:
+                options.add_argument("--headless=new")
+            except Exception:
+                options.add_argument("--headless")
             options.add_argument("--window-size=1920,1080")
+
         # CI flags
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-extensions")
+        options.add_argument("--disable-software-rasterizer")  # <— important
         options.add_argument("--disable-background-timer-throttling")
         options.add_argument("--disable-infobars")
         options.add_argument("--no-first-run")
 
-        driver = webdriver.Chrome(options=options)
+        # USE webdriver-manager to avoid version mismatch
+        from selenium.webdriver.chrome.service import Service
+        from webdriver_manager.chrome import ChromeDriverManager
+
+        chromedriver_log = os.environ.get("CHROMEDRIVER_LOG", "/tmp/chromedriver.log")
+
+        service = Service(
+            executable_path=ChromeDriverManager().install(),
+            log_path=chromedriver_log
+        )
+
+        driver = webdriver.Chrome(service=service, options=options)
 
     elif browser == "firefox":
         options = FirefoxOptions()
