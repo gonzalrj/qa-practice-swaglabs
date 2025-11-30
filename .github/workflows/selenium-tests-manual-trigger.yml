@@ -34,8 +34,16 @@ on:
 
 jobs:
   run-tests:
+    name: Run tests (sharded)
     runs-on: ubuntu-latest
     timeout-minutes: 90
+
+    # Edit this matrix to increase/reduce number of nodes.
+    # For example, to run 4 nodes: shard_index: [0,1,2,3] and shard_count: [4]
+    strategy:
+      matrix:
+        shard_index: [0,1]
+        shard_count: [2]
 
     steps:
       - name: Checkout repository (main)
@@ -69,52 +77,63 @@ jobs:
           echo "Using entrypoint at: $(pwd)/entrypoint.sh"
           sed -n '1,120p' ./entrypoint.sh || true
 
-      - name: Run tests via entrypoint.sh (override envs only if inputs provided)
+      - name: Run sharded tests on node ${{ matrix.shard_index }} / ${{ matrix.shard_count }}
+        env:
+          SHARD_INDEX: ${{ matrix.shard_index }}
+          SHARD_COUNT: ${{ matrix.shard_count }}
+          # If you still want internal xdist inside each node, set XDIST input or default in entrypoint.sh
+          XDIST_INPUT: ${{ github.event.inputs.xdist }}
+          BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
+          MARKER_INPUT: ${{ github.event.inputs.marker }}
+          HEADLESS_INPUT: ${{ github.event.inputs.headless }}
+          EXTRA_ARGS_INPUT: ${{ github.event.inputs.extra_args }}
+          RERUNS_INPUT: ${{ github.event.inputs.reruns }}
+          RERUNS_DELAY_INPUT: ${{ github.event.inputs.reruns_delay }}
         run: |
           set -euo pipefail
 
-          # Prepare Allure results dir and set EXTRA_ARGS (use '=' style to be safe)
-          RESULTS_PATH="allure-results"
+          # Per-shard Allure results directory to avoid collisions
+          RESULTS_PATH="allure-results-${SHARD_INDEX}"
           mkdir -p "$RESULTS_PATH"
           export EXTRA_ARGS="--alluredir=$RESULTS_PATH"
 
           # Export inputs only when non-empty so entrypoint.sh defaults remain intact
-          if [ -n "${{ github.event.inputs.base_url }}" ]; then
-            echo "Overriding BASE_URL -> '${{ github.event.inputs.base_url }}'"
-            export BASE_URL="${{ github.event.inputs.base_url }}"
+          if [ -n "${BASE_URL_INPUT-}" ]; then
+            echo "Overriding BASE_URL -> '${BASE_URL_INPUT}'"
+            export BASE_URL="${BASE_URL_INPUT}"
           fi
 
-          if [ -n "${{ github.event.inputs.marker }}" ]; then
-            echo "Overriding MARKER -> '${{ github.event.inputs.marker }}'"
-            export MARKER="${{ github.event.inputs.marker }}"
+          if [ -n "${MARKER_INPUT-}" ]; then
+            echo "Overriding MARKER -> '${MARKER_INPUT}'"
+            export MARKER="${MARKER_INPUT}"
           fi
 
-          if [ -n "${{ github.event.inputs.xdist }}" ]; then
-            echo "Overriding XDIST -> '${{ github.event.inputs.xdist }}'"
-            export XDIST="${{ github.event.inputs.xdist }}"
+          if [ -n "${XDIST_INPUT-}" ]; then
+            echo "Overriding XDIST -> '${XDIST_INPUT}'"
+            export XDIST="${XDIST_INPUT}"
           fi
 
-          if [ -n "${{ github.event.inputs.headless }}" ]; then
-            echo "Overriding HEADLESS -> '${{ github.event.inputs.headless }}'"
-            export HEADLESS="${{ github.event.inputs.headless }}"
+          if [ -n "${HEADLESS_INPUT-}" ]; then
+            echo "Overriding HEADLESS -> '${HEADLESS_INPUT}'"
+            export HEADLESS="${HEADLESS_INPUT}"
           fi
 
-          if [ -n "${{ github.event.inputs.extra_args }}" ]; then
-            echo "Overriding EXTRA_ARGS -> '${{ github.event.inputs.extra_args }}'"
-            export EXTRA_ARGS="${{ github.event.inputs.extra_args }}"
+          if [ -n "${EXTRA_ARGS_INPUT-}" ]; then
+            echo "Overriding EXTRA_ARGS -> '${EXTRA_ARGS_INPUT}'"
+            export EXTRA_ARGS="${EXTRA_ARGS_INPUT}"
           fi
 
-          if [ -n "${{ github.event.inputs.reruns }}" ]; then
-            echo "Overriding RERUNS -> '${{ github.event.inputs.reruns }}'"
-            export RERUNS="${{ github.event.inputs.reruns }}"
+          if [ -n "${RERUNS_INPUT-}" ]; then
+            echo "Overriding RERUNS -> '${RERUNS_INPUT}'"
+            export RERUNS="${RERUNS_INPUT}"
           fi
 
-          if [ -n "${{ github.event.inputs.reruns_delay }}" ]; then
-            echo "Overriding RERUNS_DELAY -> '${{ github.event.inputs.reruns_delay }}'"
-            export RERUNS_DELAY="${{ github.event.inputs.reruns_delay }}"
+          if [ -n "${RERUNS_DELAY_INPUT-}" ]; then
+            echo "Overriding RERUNS_DELAY -> '${RERUNS_DELAY_INPUT}'"
+            export RERUNS_DELAY="${RERUNS_DELAY_INPUT}"
           fi
 
-          # Show only selected envs (if present)
+          # Show picked envs (debug)
           [ -n "${BASE_URL-}" ] && echo "  BASE_URL=${BASE_URL}"
           [ -n "${MARKER-}" ] && echo "  MARKER=${MARKER}"
           [ -n "${XDIST-}" ] && echo "  XDIST=${XDIST}"
@@ -123,35 +142,154 @@ jobs:
           [ -n "${RERUNS_DELAY-}" ] && echo "  RERUNS_DELAY=${RERUNS_DELAY}"
           [ -n "${EXTRA_ARGS-}" ] && echo "  EXTRA_ARGS=${EXTRA_ARGS}"
 
-          # Run the entrypoint which will build pytest args and exec pytest
-          exec ./entrypoint.sh
+          # --- SHARDING: collect tests once and run subset on this shard ---
+          python - <<'PY'
+          import os, subprocess, sys, shlex
+
+          si = int(os.environ['SHARD_INDEX'])
+          sc = int(os.environ['SHARD_COUNT'])
+          
+          # Collect test nodeids (one per line). Use -q to simplify output.
+          try:
+              out = subprocess.check_output(["pytest", "--collect-only", "-q"], text=True)
+          except subprocess.CalledProcessError as e:
+              print("pytest collection failed:", e)
+              sys.exit(e.returncode)
+          
+          tests = [t.strip() for t in out.splitlines() if t.strip()]
+          if not tests:
+              print("No tests collected. Exiting successfully.")
+              sys.exit(0)
+          
+          shard_tests = [t for i,t in enumerate(tests) if i % sc == si]
+          print(f"Collected {len(tests)} tests -> running {len(shard_tests)} tests on shard {si}/{sc}")
+          
+          if not shard_tests:
+              print("No tests for this shard, exiting 0")
+              sys.exit(0)
+          
+          # Build pytest args: allow entrypoint.sh default handling but to keep this self-contained we run pytest directly.
+          # If you prefer to use entrypoint.sh, you can alter this to exec ./entrypoint.sh with envs already set above.
+          xdist = os.environ.get('XDIST','').strip()
+          base_args = ["pytest", "-q"]
+          if xdist:
+              base_args += ["-n", xdist]
+          
+          # You may append EXTRA_ARGS from env (already set to include --alluredir)
+          extra_args = os.environ.get('EXTRA_ARGS','').strip()
+          if extra_args:
+              # split safely
+              base_args += shlex.split(extra_args)
+          
+          base_args += shard_tests
+          
+          print("Running command:", " ".join(base_args))
+          rc = subprocess.call(base_args)
+          sys.exit(rc)
+          PY
 
       - name: Install Node (for Allure CLI)
         uses: actions/setup-node@v4
         with:
           node-version: "18"
 
-      - name: Install Allure CLI (npm) and generate report
+      - name: Generate Allure report (per-shard) (optional)
         run: |
-          # Only generate an HTML report if results exist
-          if [ -d "allure-results" ] && [ "$(ls -A allure-results)" ]; then
+          if [ -d "allure-results-${{ matrix.shard_index }}" ] && [ "$(ls -A allure-results-${{ matrix.shard_index }})" ]; then
             npm install -g allure-commandline --no-fund --no-audit
-            allure generate allure-results -o allure-report --clean
-            ls -la allure-report || true
+            mkdir -p "allure-report-${{ matrix.shard_index }}"
+            allure generate "allure-results-${{ matrix.shard_index }}" -o "allure-report-${{ matrix.shard_index }}" --clean || true
+            ls -la "allure-report-${{ matrix.shard_index }}" || true
           else
-            echo "No allure-results found; skipping report generation."
+            echo "No allure-results for shard ${{ matrix.shard_index }}"
           fi
 
-      - name: Upload Allure results artifact
+      - name: Upload Allure results artifact (shard)
         uses: actions/upload-artifact@v4
         with:
-          name: allure-results
-          path: allure-results
+          name: "allure-results-shard-${{ matrix.shard_index }}"
+          path: "allure-results-${{ matrix.shard_index }}"
           if-no-files-found: ignore
 
-      - name: Upload Allure HTML report artifact
+      - name: Upload Allure HTML report artifact (shard)
         uses: actions/upload-artifact@v4
         with:
-          name: allure-report
-          path: allure-report
+          name: "allure-report-shard-${{ matrix.shard_index }}"
+          path: "allure-report-${{ matrix.shard_index }}"
+          if-no-files-found: ignore
+
+  merge-allure-reports:
+    name: Merge Allure reports (consolidated)
+    needs: run-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download all workflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Show downloaded artifacts (debug)
+        run: |
+          echo "Downloaded artifact tree:"
+          ls -R artifacts || true
+
+      - name: Merge Allure results into merged-allure-results
+        run: |
+          set -euo pipefail
+          mkdir -p merged-allure-results
+
+          # Merge any directory named allure-results* found under downloaded artifacts
+          shopt -s globstar nullglob
+          merged_any=0
+          for dir in artifacts/**/allure-results*; do
+            if [ -d "$dir" ]; then
+              echo "Merging results from: $dir"
+              # To avoid name collisions we copy into a shard-prefixed subdir, then move files out.
+              # Copy everything preserving filenames into a temp dir so we can flatten safely.
+              tmpdir="$(mktemp -d)"
+              cp -r "$dir"/* "$tmpdir/" || true
+              # Move files into merged dir; if duplicate names exist they will be overwritten.
+              mv "$tmpdir"/* merged-allure-results/ || true
+              rm -rf "$tmpdir" || true
+              merged_any=1
+            fi
+          done
+
+          if [ "$merged_any" -eq 0 ]; then
+            echo "No allure-results found in downloaded artifacts. Nothing to merge."
+            exit 0
+          fi
+
+          echo "Merged results contents:"
+          ls -la merged-allure-results | sed -n '1,200p' || true
+
+      - name: Install Node (for Allure CLI)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install Allure CLI (npm) and generate consolidated report
+        run: |
+          if [ -d "merged-allure-results" ] && [ "$(ls -A merged-allure-results)" ]; then
+            npm install -g allure-commandline --no-fund --no-audit
+            allure generate merged-allure-results -o allure-reports --clean || true
+            echo "Allure report generated at ./allure-reports"
+            ls -la allure-reports || true
+          else
+            echo "merged-allure-results is empty — skipping Allure generation."
+          fi
+
+      - name: Upload consolidated Allure results (raw merged results)
+        uses: actions/upload-artifact@v4
+        with:
+          name: merged-allure-results
+          path: merged-allure-results
+          if-no-files-found: ignore
+
+      - name: Upload consolidated Allure HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-reports
+          path: allure-reports
           if-no-files-found: ignore
