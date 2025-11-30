@@ -1,36 +1,36 @@
-name: Manual Selenium Test Run Python 3.12 and Chrome
+name: Manual Selenium Test Run (inputs-enabled, Python 3.12 + Chrome)
 
 on:
   workflow_dispatch:
     inputs:
       base_url:
-        description: 'Optional: override BASE_URL (leave empty to use entrypoint.sh default)'
+        description: "Optional: override BASE_URL (leave empty to use entrypoint.sh default)"
         required: false
-        default: ''
+        default: ""
       marker:
-        description: 'Optional: pytest marker (leave empty to use entrypoint.sh default)'
+        description: "Optional: pytest marker (leave empty to use entrypoint.sh default)"
         required: false
-        default: ''
+        default: ""
       xdist:
-        description: 'Optional: pytest-xdist -n value (e.g. auto). Leave empty to use entrypoint.sh default'
+        description: "Optional: pytest-xdist -n value (e.g. auto). Leave empty to use entrypoint.sh default"
         required: false
-        default: ''
+        default: ""
       headless:
-        description: 'Optional: override HEADLESS (true|false). Leave empty to use entrypoint.sh default'
+        description: "Optional: override HEADLESS (true|false). Leave empty to use entrypoint.sh default"
         required: false
-        default: ''
+        default: ""
       extra_args:
-        description: 'Optional: extra pytest args (single string). Leave empty to use entrypoint.sh default'
+        description: "Optional: extra pytest args (single string). Leave empty to use entrypoint.sh default"
         required: false
-        default: ''
+        default: ""
       reruns:
-        description: 'Optional: number of reruns (--reruns). Leave empty to use entrypoint.sh default'
+        description: "Optional: number of reruns (--reruns). Leave empty to use entrypoint.sh default"
         required: false
-        default: ''
+        default: ""
       reruns_delay:
-        description: 'Optional: rerun delay (--reruns-delay). Leave empty to use entrypoint.sh default'
+        description: "Optional: rerun delay (--reruns-delay). Leave empty to use entrypoint.sh default"
         required: false
-        default: ''
+        default: ""
 
 jobs:
   run-tests:
@@ -69,12 +69,14 @@ jobs:
           echo "Using entrypoint at: $(pwd)/entrypoint.sh"
           sed -n '1,120p' ./entrypoint.sh || true
 
-      - name: Run tests via entrypoint.sh and generate results
+      - name: Run tests via entrypoint.sh (override envs only if inputs provided)
         run: |
           set -euo pipefail
+
+          # Prepare Allure results dir and set EXTRA_ARGS (use '=' style to be safe)
           RESULTS_PATH="allure-results"
-          mkdir -p $RESULTS_PATH
-          export EXTRA_ARGS="--alluredir $RESULTS_PATH"
+          mkdir -p "$RESULTS_PATH"
+          export EXTRA_ARGS="--alluredir=$RESULTS_PATH"
 
           # Export inputs only when non-empty so entrypoint.sh defaults remain intact
           if [ -n "${{ github.event.inputs.base_url }}" ]; then
@@ -121,17 +123,35 @@ jobs:
           [ -n "${RERUNS_DELAY-}" ] && echo "  RERUNS_DELAY=${RERUNS_DELAY}"
           [ -n "${EXTRA_ARGS-}" ] && echo "  EXTRA_ARGS=${EXTRA_ARGS}"
 
+          # Run the entrypoint which will build pytest args and exec pytest
           exec ./entrypoint.sh
-          
-      # Use the Allure Report action to generate and deploy the report
-      - name: Generate Allure Report
-        uses: allure-report/allure-action@v2
-        id: allure-report
 
-      - name: Upload Allure Report Artifact
+      - name: Install Node (for Allure CLI)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install Allure CLI (npm) and generate report
+        run: |
+          # Only generate an HTML report if results exist
+          if [ -d "allure-results" ] && [ "$(ls -A allure-results)" ]; then
+            npm install -g allure-commandline --no-fund --no-audit
+            allure generate allure-results -o allure-report --clean
+            ls -la allure-report || true
+          else
+            echo "No allure-results found; skipping report generation."
+          fi
+
+      - name: Upload Allure results artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AllureHTMLReport
-          # This pulls the dynamically generated path from the previous step's output
-          path: ${{ steps.allure-report.outputs.report_path }}
+          name: allure-results
+          path: allure-results
+          if-no-files-found: ignore
+
+      - name: Upload Allure HTML report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report
           if-no-files-found: ignore
