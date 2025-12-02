@@ -15,10 +15,6 @@ on:
         description: "Optional: pytest-xdist -n value"
         required: false
         default: ""
-#      headless:
-#        description: "Optional: HEADLESS true|false"
-#        required: false
-#        default: ""
       extra_args:
         description: "Optional: extra pytest args"
         required: false
@@ -86,8 +82,7 @@ jobs:
           BASE_URL: ${{ github.event.inputs.base_url != '' && github.event.inputs.base_url || 'https://www.saucedemo.com/' }}
           MARKER:   ${{ github.event.inputs.marker != '' && github.event.inputs.marker || 'regression' }}
           XDIST:    ${{ github.event.inputs.xdist != '' && github.event.inputs.xdist || 'auto' }}
-          # HEADLESS: ${{ github.event.inputs.headless != '' && github.event.inputs.headless || 'true' }}
-          HEADLESS: ${{ 'true' }}
+          HEADLESS: ${{ 'true' }} # Non-headless is not allowed in CI runner
           EXTRA_ARGS: ${{ github.event.inputs.extra_args != '' && github.event.inputs.extra_args || '' }}
           RERUNS:   ${{ github.event.inputs.reruns != '' && github.event.inputs.reruns || '1' }}
           RERUNS_DELAY: ${{ github.event.inputs.reruns_delay != '' && github.event.inputs.reruns_delay || '1' }}
