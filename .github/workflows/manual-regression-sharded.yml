@@ -88,7 +88,7 @@ jobs:
           RERUNS_DELAY: ${{ github.event.inputs.reruns_delay != '' && github.event.inputs.reruns_delay || '1' }}
 
           # special envs for group behaviour
-          GROUP_MARK: xdist_group         # name of marker used to tag grouped tests
+          GROUP_MARK: xdist_loadgroup         # name of marker used to tag grouped tests
           GROUP_SHARD_INDEX: 1            # which shard index should run the grouped tests
           GROUP_WORKERS: auto             # number of xdist workers to use on the group shard
 
