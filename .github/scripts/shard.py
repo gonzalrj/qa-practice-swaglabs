@@ -1,17 +1,29 @@
+#!/usr/bin/env python3
 """
-Collect pytest nodeids once, split them across shards, and run the subset for this shard.
+Collect pytest nodeids, slice them for this shard, and run pytest.
 
-Environment variables this script reads:
- - SHARD_INDEX (required)
- - SHARD_COUNT (required)
- - XDIST (optional)         -> added as: -n <XDIST>
- - BASE_URL (optional)      -> added as: --base-url <BASE_URL>
- - MARKER (optional)        -> added as: -m <MARKER>
- - HEADLESS (optional)      -> if present and truthy, add --headless
- - EXTRA_ARGS (optional)    -> shell-split and appended (e.g. "--alluredir=allure-results-0")
- - RERUNS (optional)        -> added as: --reruns <RERUNS>
- - RERUNS_DELAY (optional)  -> added as: --reruns-delay <RERUNS_DELAY>
- - SHARD_DEBUG (optional)   -> if "1", prints collected nodeids for debugging
+This version contains NO baked defaults. Provide all desired defaults via
+the GitHub Actions workflow environment variables.
+
+Environment variables used:
+  SHARD_INDEX (required)
+  SHARD_COUNT (required)
+
+  BASE_URL
+  BROWSER
+  MARKER
+  HEADLESS
+  XDIST
+  EXTRA_ARGS
+  RERUNS
+  RERUNS_DELAY
+
+Group-specific envs:
+  GROUP_MARK
+  GROUP_SHARD_INDEX
+  GROUP_WORKERS
+
+Set SHARD_DEBUG=1 to print collected nodeids and additional debug info.
 """
 from __future__ import annotations
 
@@ -20,107 +32,138 @@ import re
 import shlex
 import subprocess
 import sys
-from typing import List
+from typing import List, Optional
 
 
 def looks_like_nodeid(line: str) -> bool:
-    """Return True if the line looks like a pytest nodeid or file path pytest would accept."""
+    """Return True if line looks like a pytest nodeid or file path pytest would accept."""
     if not line:
         return False
     ln = line.strip()
-
-    # skip obvious noise
     low = ln.lower()
+
+    # Skip obvious noise
     if low.startswith(("warning:", "pytestwarning", "deprecationwarning", "error:")):
         return False
     if "no tests ran" in low:
         return False
-    if re.match(r'^\d+\s+tests?\s+collected', ln):
+    if re.match(r"^\d+\s+tests?\s+collected", ln):
         return False
 
-    # direct nodeid (module::test or module::class::test)
+    # Direct nodeid (module::class::test)
     if "::" in ln:
         return True
 
-    # unix-style file path ending with .py
-    if "/" in ln and ln.endswith(".py"):
+    # Unix or Windows paths to python file
+    if ln.endswith(".py") and ("/" in ln or "\\" in ln):
         return True
 
-    # windows-style path
-    if "\\" in ln and ln.endswith(".py"):
-        return True
-
-    # common heuristic
+    # Heuristic: contains common test folder or filename prefix
     if "tests/" in ln or "/test_" in ln or "\\test_" in ln:
         return True
 
     return False
 
 
-def collect_pytest_nodeids() -> List[str]:
-    """Run pytest --collect-only -q and return a list of candidate nodeid lines."""
-    try:
-        out = subprocess.check_output(["pytest", "--collect-only", "-q"], text=True)
-    except subprocess.CalledProcessError as e:
-        print("pytest collection failed:", e, file=sys.stderr)
-        # If pytest fails during collection, propagate its exit code
-        sys.exit(e.returncode)
+def collect_pytest_nodeids(marker_filter: Optional[str] = None) -> List[str]:
+    """
+    Run pytest --collect-only -q (optionally with -m marker_filter) and return candidate nodeid lines.
+    Raises subprocess.CalledProcessError on collection failure (caller will exit).
+    """
+    cmd = ["pytest", "--collect-only", "-q"]
+    if marker_filter:
+        cmd += ["-m", marker_filter]
 
-    lines = [l.strip() for l in out.splitlines() if l.strip()]
+    try:
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        print(f"pytest collection failed (exit {e.returncode}). Output:", file=sys.stderr)
+        # Print captured output for debugging
+        if hasattr(e, "output") and e.output:
+            print(e.output, file=sys.stderr)
+        raise
+
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
     nodeids = [ln for ln in lines if looks_like_nodeid(ln)]
     return nodeids
 
 
-def build_pytest_cmd(shard_tests: List[str]) -> List[str]:
-    """Assemble the pytest command from env vars and the provided nodeids."""
+def build_pytest_cmd(
+        shard_tests: List[str], *, is_group_shard: bool, group_workers: Optional[str]
+) -> List[str]:
+    """Assemble the pytest command from environment variables and provided nodeids."""
     cmd: List[str] = ["pytest", "-q"]
 
-    # xdist
-    xdist = os.environ.get("XDIST", "auto").strip()
-    if xdist:
-        cmd += ["-n", xdist]
+    # Debug print of envs
+    print(
+        "ENV:",
+        "BASE_URL=%r" % os.environ.get("BASE_URL"),
+        "BROWSER=%r" % os.environ.get("BROWSER"),
+        "MARKER=%r" % os.environ.get("MARKER"),
+        "HEADLESS=%r" % os.environ.get("HEADLESS"),
+        "XDIST=%r" % os.environ.get("XDIST"),
+        "EXTRA_ARGS=%r" % os.environ.get("EXTRA_ARGS"),
+        "RERUNS=%r" % os.environ.get("RERUNS"),
+        "RERUNS_DELAY=%r" % os.environ.get("RERUNS_DELAY"),
+    )
 
-    # base url (pytest option expected by your tests)
+    # Xdist / workers
+    if is_group_shard:
+        workers_val = (group_workers or os.environ.get("XDIST") or "").strip()
+        if workers_val:
+            cmd += ["-n", workers_val]
+        # Use loadgroup distribution for grouped tests
+        cmd += ["--dist", "loadgroup"]
+    else:
+        xdist_val = (os.environ.get("XDIST") or "").strip()
+        if xdist_val:
+            cmd += ["-n", xdist_val]
+
+    # Standard flags: base-url, browser
     base_url = os.environ.get("BASE_URL", "").strip()
     if base_url:
         cmd += ["--base-url", base_url]
 
-    # marker
+    browser = os.environ.get("BROWSER", "").strip()
+    if browser:
+        cmd += ["--browser", browser]
+
+    # Marker: add only for non-group shards if provided
     marker = os.environ.get("MARKER", "").strip()
-    if marker:
+    if marker and not is_group_shard:
         cmd += ["-m", marker]
 
-    # headless flag - only add if TEST harness expects --headless as CLI flag
-    headless = os.environ.get("HEADLESS", "").strip()
-    if headless and headless.lower() not in ("0", "false", "no", ""):
+    # Headless
+    headless_val = os.environ.get("HEADLESS", "").strip().lower()
+    if headless_val in {"1", "true", "yes"}:
         cmd += ["--headless"]
 
-    # reruns
+    # Reruns and delay
     reruns = os.environ.get("RERUNS", "").strip()
     if reruns:
         cmd += ["--reruns", reruns]
 
-    # reruns delay
     reruns_delay = os.environ.get("RERUNS_DELAY", "").strip()
     if reruns_delay:
         cmd += ["--reruns-delay", reruns_delay]
 
-    # extra args (e.g. --alluredir=allure-results-0). Shell-split safely.
+    # Extra args (shell-split)
     extra = os.environ.get("EXTRA_ARGS", "").strip()
     if extra:
         try:
             cmd += shlex.split(extra)
-        except Exception:
-            # fallback: append as a single token (shouldn't normally happen)
+        except ValueError as e:
+            # shlex.split raises ValueError on malformed quoting — fall back to appending raw string
+            print(f"Warning: failed to shell-split EXTRA_ARGS ({e!r}); appending raw EXTRA_ARGS", file=sys.stderr)
             cmd.append(extra)
 
-    # finally, the nodeids for this shard
+    # Finally the nodeids
     cmd += shard_tests
     return cmd
 
 
 def main() -> None:
-    # required envs
+    # Required envs (explicit error handling)
     try:
         si = int(os.environ["SHARD_INDEX"])
         sc = int(os.environ["SHARD_COUNT"])
@@ -131,40 +174,71 @@ def main() -> None:
         print(f"Invalid shard index/count: {e}", file=sys.stderr)
         sys.exit(2)
 
-    nodeids = collect_pytest_nodeids()
+    # Group configuration
+    group_mark = (os.environ.get("GROUP_MARK") or "").strip()
+    group_shard_index_raw = (os.environ.get("GROUP_SHARD_INDEX") or "").strip()
+    group_workers = (os.environ.get("GROUP_WORKERS") or "").strip() or None
+
+    group_shard_index: Optional[int] = None
+    if group_shard_index_raw:
+        try:
+            group_shard_index = int(group_shard_index_raw)
+        except ValueError:
+            print("Invalid GROUP_SHARD_INDEX; ignoring group shard behaviour", file=sys.stderr)
+            group_shard_index = None
+
+    # Determine whether this is the designated group shard (explicit boolean)
+    is_group_shard = bool(group_mark) and (group_shard_index is not None and group_shard_index == si)
+
+    # Decide collection filter
+    collect_marker_filter: Optional[str]
+    if group_mark:
+        if is_group_shard:
+            collect_marker_filter = group_mark
+            print(f"Shard {si} is the GROUP_SHARD and will collect tests with marker: {group_mark}")
+        else:
+            collect_marker_filter = f"not {group_mark}"
+            print(f"Shard {si} will collect tests excluding marker: {group_mark}")
+    else:
+        collect_marker_filter = None
+        print("No GROUP_MARK specified — normal sharding will be used.")
+
+    # Collect nodeids (may raise CalledProcessError which we let bubble up)
+    try:
+        nodeids = collect_pytest_nodeids(marker_filter=collect_marker_filter)
+    except subprocess.CalledProcessError as exc:
+        # collect_pytest_nodeids already printed useful debugging info
+        sys.exit(getattr(exc, "returncode", 2))
 
     if not nodeids:
-        print("No valid tests detected from pytest collection. Output of pytest --collect-only -q follows:")
-        try:
-            raw = subprocess.check_output(["pytest", "--collect-only", "-q"], text=True, stderr=subprocess.STDOUT)
-            print(raw)
-        except Exception:
-            pass
-        # Exit 0 so the pipeline does not treat an empty shard as a failure
+        print("No tests collected (after marker filtering). Exiting successfully.")
         sys.exit(0)
 
-    # optional debug printing of all collected nodeids
+    # Optional debug printing of nodeids
     if os.environ.get("SHARD_DEBUG", "") == "1":
         print("Collected nodeids (debug):")
         for n in nodeids:
             print("  -", n)
         print()
 
-    # slice tests for this shard
-    shard_tests = [t for i, t in enumerate(nodeids) if i % sc == si]
+    # Partition tests for this shard
+    if is_group_shard:
+        shard_tests = nodeids  # all group-marked tests run on this shard
+    else:
+        shard_tests = [t for i, t in enumerate(nodeids) if i % sc == si]
 
-    print(f"Collected {len(nodeids)} tests → running {len(shard_tests)} on shard {si}/{sc}")
+    print(f"Collected {len(nodeids)} total nodeids → running {len(shard_tests)} on shard {si}/{sc}")
 
     if not shard_tests:
         print("This shard has no tests to run. Exiting successfully.")
         sys.exit(0)
 
-    pytest_cmd = build_pytest_cmd(shard_tests)
+    # Build pytest command and execute
+    pytest_cmd = build_pytest_cmd(shard_tests, is_group_shard=is_group_shard, group_workers=group_workers)
 
-    # flush stdout to keep logs clean
     sys.stdout.flush()
+    print("Running command:", " ".join(shlex.quote(x) for x in pytest_cmd))
 
-    print("Running command:", " ".join(pytest_cmd))
     rc = subprocess.call(pytest_cmd)
     sys.exit(rc)
 

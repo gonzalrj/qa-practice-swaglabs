@@ -24,6 +24,7 @@ class TestLogin:
         with allure.step("Go to homepage and clear all cookies."):
             self.login_page._go_to(base_url, "clear_cookies")
 
+    @pytest.mark.xdist_loadgroup(name="checkout_users")
     @pytest.mark.smoke
     @pytest.mark.regression
     @pytest.mark.login
@@ -38,6 +39,7 @@ class TestLogin:
         with allure.step("Logout usr."):
             self.menu.logout_user(base_url)
 
+    @pytest.mark.xdist_loadgroup(name="checkout_users")
     @pytest.mark.regression
     @pytest.mark.login
     @allure.title("Verify failed login using invalid credentials")
@@ -49,6 +51,7 @@ class TestLogin:
             assert "do not match" in self.login_page._get_error_message(), ("Username and Password mismatch error "
                                                                             "should be returned.")
 
+    @pytest.mark.xdist_loadgroup(name="checkout_users")
     @pytest.mark.regression
     @pytest.mark.login
     @allure.title("Verify locked out user")
