@@ -135,20 +135,20 @@ jobs:
             echo "No chromedriver log found"
           fi
 
-      - name: Install Node (for Allure CLI)
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-
-      - name: Generate Allure report (per-shard)
-        run: |
-          if [ -d "allure-results-${{ matrix.shard_index }}" ] && [ "$(ls -A allure-results-${{ matrix.shard_index }})" ]; then
-            npm install -g allure-commandline --no-fund --no-audit
-            mkdir -p "allure-report-${{ matrix.shard_index }}"
-            allure generate "allure-results-${{ matrix.shard_index }}" -o "allure-report-${{ matrix.shard_index }}" --clean
-          else
-            echo "No allure-results for shard ${{ matrix.shard_index }}"
-          fi
+#      - name: Install Node (for Allure CLI)
+#        uses: actions/setup-node@v4
+#        with:
+#          node-version: "18"
+#
+#      - name: Generate Allure report (per-shard)
+#        run: |
+#          if [ -d "allure-results-${{ matrix.shard_index }}" ] && [ "$(ls -A allure-results-${{ matrix.shard_index }})" ]; then
+#            npm install -g allure-commandline --no-fund --no-audit
+#            mkdir -p "allure-report-${{ matrix.shard_index }}"
+#            allure generate "allure-results-${{ matrix.shard_index }}" -o "allure-report-${{ matrix.shard_index }}" --clean
+#          else
+#            echo "No allure-results for shard ${{ matrix.shard_index }}"
+#          fi
 
       - name: Upload Allure results artifact (shard)
         uses: actions/upload-artifact@v4
