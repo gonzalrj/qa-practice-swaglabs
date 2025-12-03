@@ -36,7 +36,7 @@ class TestLogin:
         with allure.step("Verify that user was successfully logged in."):
             assert not self.login_page._is_error_header_displayed(), "User was not logged in."
 
-        with allure.step("Logout usr."):
+        with allure.step("Logout user."):
             self.menu.logout_user(base_url)
 
     @pytest.mark.xdist_loadgroup(name="checkout_users")
