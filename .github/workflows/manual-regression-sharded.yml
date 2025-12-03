@@ -63,6 +63,14 @@ jobs:
           sudo apt install -y /tmp/chrome.deb || (sudo apt-get -f install -y && sudo apt install -y /tmp/chrome.deb)
           google-chrome --version
 
+      - name: Cache webdriver-manager (~/.wdm)
+        uses: actions/cache@v4
+        with:
+          path: ~/.wdm
+          key: ${{ runner.os }}-wdm-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-wdm-
+
       - name: Install dependencies (Python)
         run: |
           python -m pip install --upgrade pip
@@ -134,21 +142,6 @@ jobs:
           else
             echo "No chromedriver log found"
           fi
-
-#      - name: Install Node (for Allure CLI)
-#        uses: actions/setup-node@v4
-#        with:
-#          node-version: "18"
-#
-#      - name: Generate Allure report (per-shard)
-#        run: |
-#          if [ -d "allure-results-${{ matrix.shard_index }}" ] && [ "$(ls -A allure-results-${{ matrix.shard_index }})" ]; then
-#            npm install -g allure-commandline --no-fund --no-audit
-#            mkdir -p "allure-report-${{ matrix.shard_index }}"
-#            allure generate "allure-results-${{ matrix.shard_index }}" -o "allure-report-${{ matrix.shard_index }}" --clean
-#          else
-#            echo "No allure-results for shard ${{ matrix.shard_index }}"
-#          fi
 
       - name: Upload Allure results artifact (shard)
         uses: actions/upload-artifact@v4
